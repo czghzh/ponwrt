@@ -1,3 +1,4 @@
 # add your custom package feeds here
 #
 # http://www.example.com/path/to/files/packages.adb
+http://127.0.0.1/kmods/packages.adb
