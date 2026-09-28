@@ -56,8 +56,8 @@ for (let phy_name, phy in board.wlan) {
 		let width = band.max_width;
 		if (band_name == "2G")
 			width = 20;
-		else if (width > 80)
-			width = 80;
+		else if (width > 160)
+			width = 160;
 
 		let htmode = filter(htmode_order, (m) => band[lc(m)])[0];
 		if (htmode)
