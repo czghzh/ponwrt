@@ -25,11 +25,27 @@
  * this one - nothing is lost: the user can hide it with its own Hide button,
  * or reinstall this package.
  *
- * The layout is the stock block's field set with render() rewritten:
+ * The layout is the stock block's field set with render() rewritten into two
+ * side by side panes:
  *
- *   设备信息                        two column grid, all metadata
- *   温度 / CPU 占用率 / Pon 端口速率 / 连接数
- *                                   four metric cards below it
+ *   +----------------------------+   +---------------------+
+ *   | 温度          CPU 占用率    |   |  设备信息            |
+ *   |                            |   |  (single column of   |
+ *   | Pon 端口速率   连接数       |   |   board metadata)    |
+ *   +----------------------------+   +---------------------+
+ *
+ *       left, 3 parts                     right, 2 parts
+ *
+ * The left pane holds the four metric cards as a 2x2 grid, the right one the
+ * metadata surface.  On narrow screens the panes wrap onto separate rows.
+ *
+ * Both panes are *direct* flex items of that row and stretch to its full
+ * height, so their bottom edges line up whichever side happens to carry more
+ * content - the side that runs long sets the height, the other follows.  The
+ * grid spreads the extra height over its two auto-sized rows, which is what
+ * brings the cards inside it down to the metadata surface's edge.  Do not wrap
+ * either pane in an extra div: the wrapper would stretch, the grid/surface
+ * inside it would not, and the bottom edges would drift apart again.
  *
  * The sensor, counter, throughput and offload values come from
  * resources/hardware_status.js.
@@ -111,33 +127,68 @@ var cSurface = css('background-color-high', '#ffffff');
 var cCardBg  = css('background-color-medium', '#f9f9f9');
 var cBorder  = css('border-color-low', '#eeeeee');
 var cTrack   = css('border-color-low', '#eeeeee');
-var cLabel   = css('text-color-low', '#bfbfbf');
-var cText    = css('text-color-medium', '#808080');
+/* One muted grey, on purpose.  This block used to carry two - text-color-low
+ * for captions and text-color-medium for the value labels - which put a lighter
+ * grey (`#bfbfbf`) next to a darker one (`#808080`) in the same card.  The user
+ * circled the darker pair (TCP / UDP) and asked for everything to match:
+ * 「它的字体灰色程度比其他的灰一点点，我很喜欢，反而看得更清楚」.  Merging the two
+ * into a single token is what keeps them from drifting apart again - there is no
+ * longer a "caption grey" to accidentally set differently. */
+var cMuted   = css('text-color-medium', '#808080');
 var cStrong  = css('text-color-highest', '#000000');
 var cAccent  = css('primary-color-high', '#1976d2');
 var cHot     = css('error-color-high', 'rgb(246, 43, 18)');
 var cWarm    = css('warn-color-high', '#efbd0b');
 var cCool    = css('success-color-high', 'rgb(0, 172, 89)');
 
-var S_INFO_GRID = 'display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 6px 18px';
-var S_CARD_GRID = 'display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 10px';
-var S_SURFACE   = 'background: ' + cSurface + '; border: 1px solid ' + cBorder + '; border-radius: 6px; padding: 12px 14px';
+/* The metadata grid is a single column: it lives in the narrow right pane,
+ * where auto-fit would almost always collapse to one column anyway.
+ * The card grid is pinned to two columns so the four cards always read as a
+ * 2x2 square in the left pane; the old margin-top is gone because the panes
+ * are now separated by the flex container's gap.
+ * Neither grid declares grid-template-rows, so both rows stay auto-sized -
+ * that is what lets the default align-content: stretch hand the extra height
+ * (when this pane is the shorter of the two) down to the cards, so they end
+ * flush with the pane beside them instead of floating short. */
+var S_INFO_GRID = 'display: grid; grid-template-columns: 1fr; gap: 6px 18px';
+var S_CARD_GRID = 'display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px';
+/* min-width: 0 keeps long values (the firmware string) wrapping inside the
+ * pane instead of widening it past the flex-basis split. */
+var S_SURFACE   = 'min-width: 0; background: ' + cSurface + '; border: 1px solid ' + cBorder + '; border-radius: 6px; padding: 12px 14px';
 var S_CARD      = 'background: ' + cCardBg + '; border: 1px solid ' + cBorder + '; border-radius: 6px; padding: 10px 12px; min-width: 0';
-var S_CARD_TITLE = 'font-size: 12px; color: ' + cLabel + '; margin-bottom: 8px';
-var S_EMPTY     = 'font-size: 13px; color: ' + cLabel;
-var S_BIG       = 'font-size: 24px; font-weight: 600; line-height: 1.15; font-variant-numeric: tabular-nums; color: ' + cStrong;
-var S_NOTE      = 'font-size: 11px; color: ' + cLabel;
+var S_CARD_TITLE = 'font-size: 12px; color: ' + cMuted + '; margin-bottom: 8px';
+var S_EMPTY     = 'font-size: 13px; color: ' + cMuted;
+/* Every card's *leading figure* is set at this one size - the CPU percentage,
+ * the TCP/UDP counts, the two temperatures and the uplink rate - so the four
+ * cards read as one set.  Only the leading figure is promoted; its unit and any
+ * secondary reading (the CPU clock) stay small.  The temperature readings used
+ * to tint their figure warm/hot as well, which made them look like a different
+ * kind of value, so all figures are plain black now and the warm/hot colour
+ * lives only in the temperature bars.  S_BIG_BASE is the colourless half, kept
+ * for a card that wants its own colour on the figure. */
+var S_BIG_BASE  = 'font-size: 24px; font-weight: 600; line-height: 1.15; font-variant-numeric: tabular-nums';
+var S_BIG       = S_BIG_BASE + '; color: ' + cStrong;
+var S_UNIT      = 'font-size: 12px; color: ' + cMuted;
+var S_NOTE      = 'font-size: 11px; color: ' + cMuted;
 var S_TRACK     = 'height: 4px; margin-top: 4px; border-radius: 2px; background: ' + cTrack + '; overflow: hidden';
+/* The two *secondary* readings sit one step below S_BIG: the CPU clock next to
+ * the big percentage, and the offloaded-flow count behind the TCP/UDP figure.
+ * They share this one size on purpose - the counters used to inherit 11px from
+ * their caption, which made the same kind of number look like two different
+ * ones a card apart. */
+var S_SECOND    = '16px';
 /* The offloaded-flow count is a good-news reading, so the *number* gets the
  * theme's success colour.  The "硬件卸载" label itself stays in the muted label
  * grey it shares with the other captions - only the value is coloured. */
-var S_OFFLOAD     = 'font-size: 11px; color: ' + cLabel;
-var S_OFFLOAD_NUM = 'color: ' + cCool + '; font-weight: 600';
-var S_RATE       = 'font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; color: ' + cStrong;
-var S_RATE_UNIT  = 'font-size: 11px; color: ' + cLabel + '; margin-left: 3px';
-/* The direction caption inside the throughput card ("上行速率" / "下行速率").
- * It replaced the old arrow glyphs so the two rows read without guessing. */
-var S_RATE_LABEL = 'font-size: 12px; color: ' + cLabel;
+var S_OFFLOAD     = 'font-size: 11px; color: ' + cMuted;
+var S_OFFLOAD_NUM = 'font-size: ' + S_SECOND + '; color: ' + cCool + '; font-weight: 600';
+/* The CPU clock is a *secondary* reading sitting next to the big percentage, so
+ * it stays one step below S_BIG. */
+var S_RATE       = 'font-size: ' + S_SECOND + '; font-weight: 600; font-variant-numeric: tabular-nums; color: ' + cStrong;
+var S_RATE_UNIT  = 'font-size: 12px; color: ' + cMuted + '; margin-left: 3px';
+/* The muted caption in front of a reading ("上行速率", "TCP"), sized to sit on
+ * the baseline of a 24 px figure without drawing attention to itself. */
+var S_RATE_LABEL = 'font-size: 12px; color: ' + cMuted;
 
 /* drop null/undefined children - the DOM helper is not relied upon for that */
 function kids() {
@@ -186,7 +237,10 @@ function unavailable() {
 	return E('div', { 'style': S_EMPTY }, [ _('不可用') ]);
 }
 
-function buildInfo(pairs) {
+/* `pane` is the flex sizing that turns the surface into the right pane of the
+ * two-column row; it is passed in from render() so the layout decision stays
+ * visible where the row is built. */
+function buildInfo(pairs, pane) {
 	var grid = E('div', { 'style': S_INFO_GRID });
 
 	for (var i = 0; i < pairs.length; i++) {
@@ -197,7 +251,7 @@ function buildInfo(pairs) {
 				(wide ? '; grid-column: 1 / -1' : '')
 		}, [
 			E('span', {
-				'style': 'flex: 0 0 auto; min-width: 5em; font-size: 12px; color: ' + cLabel
+				'style': 'flex: 0 0 auto; min-width: 5em; font-size: 12px; color: ' + cMuted
 			}, [ label ]),
 			E('span', {
 				'style': 'flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; color: ' + cStrong
@@ -205,7 +259,7 @@ function buildInfo(pairs) {
 		]));
 	}
 
-	return E('div', { 'style': S_SURFACE }, [ grid ]);
+	return E('div', { 'style': (pane ? pane + '; ' : '') + S_SURFACE }, [ grid ]);
 }
 
 function buildTemps(hw) {
@@ -221,12 +275,10 @@ function buildTemps(hw) {
 			'style': 'margin-bottom: ' + ((i < temps.length - 1) ? '8px' : '0')
 		}, [
 			E('div', { 'style': 'display: flex; align-items: baseline; justify-content: space-between; gap: 8px' }, [
-				E('span', { 'style': 'font-size: 13px; color: ' + cText }, [ t.label ]),
-				E('span', {
-					'style': 'font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; color: ' + color
-				}, [
+				E('span', { 'style': 'font-size: 13px; color: ' + cMuted }, [ t.label ]),
+				E('span', { 'style': S_BIG }, [
 					(t.value / 1000.0).toFixed(1),
-					E('span', { 'style': 'font-size: 11px; font-weight: 400; margin-left: 2px' }, [ '°C' ])
+					E('span', { 'style': 'font-size: 12px; font-weight: 400; margin-left: 2px' }, [ '°C' ])
 				])
 			]),
 			bar(tempBarWidth(t.value), color)
@@ -247,7 +299,7 @@ function buildUsage(hw, freq) {
 		E('div', { 'style': 'display: flex; align-items: baseline; justify-content: space-between; gap: 8px' }, kids(
 			E('span', { 'style': 'display: flex; align-items: baseline; gap: 2px' }, [
 				E('span', { 'style': S_BIG }, [ hw.cpuusage.toFixed(1) ]),
-				E('span', { 'style': 'font-size: 12px; color: ' + cLabel }, [ '%' ])
+				E('span', { 'style': S_UNIT }, [ '%' ])
 			]),
 			freq != null ? E('span', {}, [
 				E('span', { 'style': S_RATE }, [ freq ]),
@@ -270,7 +322,7 @@ function rateLine(label, value, spaced) {
 	}, [
 		E('span', { 'style': S_RATE_LABEL }, [ label ]),
 		E('span', {}, [
-			E('span', { 'style': S_RATE }, [ value.toFixed(2) ]),
+			E('span', { 'style': S_BIG }, [ value.toFixed(2) ]),
 			E('span', { 'style': S_RATE_UNIT }, [ 'Mibit/s' ])
 		])
 	]);
@@ -316,7 +368,7 @@ function buildConns(hw) {
 		rows.push(E('div', {
 			'style': 'display: flex; align-items: baseline; gap: 8px; margin-bottom: ' + (rows.length ? '0' : '8px')
 		}, kids(
-			E('span', { 'style': 'flex: 0 0 auto; min-width: 2.8em; font-size: 12px; color: ' + cText }, [ label ]),
+			E('span', { 'style': 'flex: 0 0 auto; min-width: 2.8em; font-size: 12px; color: ' + cMuted }, [ label ]),
 			E('span', { 'style': S_BIG }, [ String(c.total) ]),
 			sub
 		)));
@@ -416,13 +468,30 @@ return baseclass.extend({
 			[ _('固件版本'), (L.isObject(boardinfo.release) ? boardinfo.release.description + ' / ' : '') + (luciversion || ''), true ]
 		];
 
-		var metrics = E('div', { 'style': S_CARD_GRID }, [
+		/* Both panes are the grids themselves - not wrappers around them - so
+		 * that align-items: stretch on the row below hands them the full row
+		 * height and the cards/surface inside can fill it.  A wrapper would
+		 * take the stretch while the grid inside stayed at its content
+		 * height, which is exactly the "one side stops short" look this
+		 * layout is meant to avoid. */
+		var paneCards = E('div', { 'style': 'flex: 3 1 360px; min-width: 0; ' + S_CARD_GRID }, [
 			card(_('温度'),        buildTemps(hw)),
 			card(_('CPU 占用率'),  buildUsage(hw, cpufreq)),
 			card(_('Pon 端口速率'),  buildRate(hw)),
 			card(_('连接数'),      buildConns(hw))
 		]);
 
-		return E('div', {}, [ buildInfo(info), metrics ]);
+		/* Left pane: the four cards as a 2x2 grid.  Right pane: the metadata
+		 * surface.  flex-grow 3 vs 2 is the 3:2 split the user asked for;
+		 * flex-wrap puts the panes on separate rows when the viewport gets
+		 * too narrow to give both their min width.  align-items: stretch is
+		 * the default and is stated here because it is load-bearing: the
+		 * taller pane sets the row height and the shorter one grows to match,
+		 * keeping the two bottom edges parallel. */
+		var paneInfo = buildInfo(info, 'flex: 2 1 260px');
+
+		return E('div', {
+			'style': 'display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch'
+		}, [ paneCards, paneInfo ]);
 	}
 });
