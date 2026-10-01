@@ -7,7 +7,7 @@
 #
 #   tcp_total=<nf_conntrack entries>   tcp_npu=<HW offloaded entries>
 #   udp_total=<nf_conntrack entries>   udp_npu=<HW offloaded entries>
-#   pon_rx_bytes=<octets>              pon_tx_bytes=<octets>
+#   wan_rx_bytes=<octets>              wan_tx_bytes=<octets>
 #
 # "total" counts the conntrack entries of that L4 protocol (IPv4 and IPv6
 # together), "npu" the subset the Airoha PPE has taken over in hardware -
@@ -19,16 +19,52 @@
 # reporting st_size 0, and rpcd's file.read only returns the first 4 KiB of
 # such files.
 #
-# The optical uplink octet counters ride along in the same exec so the page can
+# The WAN-side octet counters ride along in the same exec so the page can
 # derive the up/down rate from the delta between two polls without a second
 # rpcd round trip.  Note the ACL grants exec on this script, not read on the
 # sysfs attributes, so those are *not* readable from LuCI directly.
-# The two lines are omitted when the interface is absent, which makes the page
-# fall back to "不可用" instead of reporting a bogus 0.
+# The two lines are omitted when no WAN device can be resolved, which makes
+# the page fall back to "不可用" instead of reporting a bogus 0.
+#
+# Data source history: this used to read pon0 (the XPON netdev) and the card
+# was titled "Pon 端口速率".  2026-10-01: the primary unit runs as a plain
+# router (PPPoE on lan3/lan4, pon0 down) and br-lan was tried next - but a
+# hardware-offloaded flow never touches the bridge netdev counters (measured
+# on the device: br-lan flat 0 while ~100 Mbit/s flowed through lan1<->wan
+# ports), so that was reverted the same day.  Then a variant resolving the
+# *logical* WAN devices (ubus l3_device -> pppoe-wan/pppoe-wan6) was tried and
+# also reverted: ppp netdevs do not see hardware-offloaded flows either
+# (measured flat 0 while the physical MAC moved ~50 Mbit/s).  Now, per the
+# user's decision, the counters come from the *physical* WAN-side devices
+# straight out of the uci config (network.wan.device / network.wan6.device -
+# here lan4 + lan3; on a PON deployment it resolves to the XPON device) and
+# are summed.  The physical port counters are the ones the PPE offload path
+# still accounts.
 
 CT=/proc/net/nf_conntrack
-PON_IF=pon0
-PON_STAT=/sys/class/net/$PON_IF/statistics
+
+# Resolve the physical WAN-side devices from the config, dedup, keep order.
+# Deliberately the uci `device` field (the PPPoE *parent* port), NOT the ubus
+# l3_device (pppoe-wan): offloaded flows bypass ppp netdev accounting.
+WAN_IFS=""
+for k in wan wan6; do
+	d=$(uci -q get network.$k.device 2>/dev/null)
+	case " $WAN_IFS " in
+		*" $d "*) ;;
+		"  ") WAN_IFS=$d ;;
+		*)    WAN_IFS="$WAN_IFS $d" ;;
+	esac
+done
+WAN_IFS=${WAN_IFS# }
+# Fallback when the config lookup yields nothing: the 10G MAC carrying the
+# WAN-side ports first, then the bridge.
+if [ -z "$WAN_IFS" ]; then
+	if [ -d /sys/class/net/eth0 ]; then
+		WAN_IFS=eth0
+	else
+		WAN_IFS=br-lan
+	fi
+fi
 
 tcp_total=0
 tcp_npu=0
@@ -52,7 +88,19 @@ echo "tcp_npu=$tcp_npu"
 echo "udp_total=$udp_total"
 echo "udp_npu=$udp_npu"
 
-if [ -r "$PON_STAT/rx_bytes" ]; then
-	echo "pon_rx_bytes=$(cat "$PON_STAT/rx_bytes" 2>/dev/null)"
-	echo "pon_tx_bytes=$(cat "$PON_STAT/tx_bytes" 2>/dev/null)"
+wan_rx=0
+wan_tx=0
+have_wan=0
+
+for d in $WAN_IFS; do
+	rx=$(cat "/sys/class/net/$d/statistics/rx_bytes" 2>/dev/null) || continue
+	tx=$(cat "/sys/class/net/$d/statistics/tx_bytes" 2>/dev/null) || continue
+	wan_rx=$((wan_rx + rx))
+	wan_tx=$((wan_tx + tx))
+	have_wan=1
+done
+
+if [ "$have_wan" = 1 ]; then
+	echo "wan_rx_bytes=$wan_rx"
+	echo "wan_tx_bytes=$wan_tx"
 fi

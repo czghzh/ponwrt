@@ -31,7 +31,7 @@
  *   +----------------------------+   +---------------------+
  *   | 温度          CPU 占用率    |   |  设备信息            |
  *   |                            |   |  (single column of   |
- *   | Pon 端口速率   连接数       |   |   board metadata)    |
+ *   | WAN 端口速率   连接数       |   |   board metadata)    |
  *   +----------------------------+   +---------------------+
  *
  *       left, 3 parts                     right, 2 parts
@@ -477,7 +477,7 @@ return baseclass.extend({
 		var paneCards = E('div', { 'style': 'flex: 3 1 360px; min-width: 0; ' + S_CARD_GRID }, [
 			card(_('温度'),        buildTemps(hw)),
 			card(_('CPU 占用率'),  buildUsage(hw, cpufreq)),
-			card(_('Pon 端口速率'),  buildRate(hw)),
+			card(_('WAN 端口速率'),  buildRate(hw)),
 			card(_('连接数'),      buildConns(hw))
 		]);
 

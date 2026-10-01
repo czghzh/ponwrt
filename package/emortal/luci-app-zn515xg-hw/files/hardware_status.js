@@ -20,7 +20,7 @@
  *                  its source /proc/net/nf_conntrack is a pseudo file with
  *                  st_size 0 and rpcd's file.read returns at most 4096 bytes
  *                  for such files, so a helper is required here)
- *   up/down rate   same helper - it also reports the pon0 octet counters, so
+ *   up/down rate   same helper - it also reports the br-lan octet counters, so
  *                  the rate is a delta between two polls, like the CPU usage.
  *                  Reported in Mibit/s (1024*1024 bit/s)
  *   offload state  /sys/kernel/debug/ppe/config                 (npu_attached)
@@ -178,7 +178,8 @@ function readRaw() {
 
 /* Connection counters + uplink rate, from a single helper exec.
  *
- * The helper reports absolute octet counters of the optical uplink, so the rate
+ * The helper reports absolute octet counters of the WAN-side devices
+ * (resolved from the network config and summed), so the rate
  * is the delta between two polls over the elapsed wall clock time - the same
  * scheme statUsage() uses above.  The interface is not configurable here on
  * purpose: the helper decides which one it reports, and the page never shows
@@ -199,12 +200,12 @@ function readNet() {
 		         udp: pair(vals.udp_total, vals.udp_npu) };
 	}
 
-	/* null when the helper did not report the octet counters (interface gone) */
+	/* null when the helper did not report the octet counters (no WAN device) */
 	function sample(vals, t) {
-		if (typeof(vals.pon_rx_bytes) != 'number' || typeof(vals.pon_tx_bytes) != 'number')
+		if (typeof(vals.wan_rx_bytes) != 'number' || typeof(vals.wan_tx_bytes) != 'number')
 			return null;
 
-		return { rx: vals.pon_rx_bytes, tx: vals.pon_tx_bytes, t: t };
+		return { rx: vals.wan_rx_bytes, tx: vals.wan_tx_bytes, t: t };
 	}
 
 	/* counter wrap / restart would otherwise produce a huge bogus spike */
