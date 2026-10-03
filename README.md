@@ -58,13 +58,6 @@ cd ponwrt
 ./scripts/feeds install -a
 
 
-#  Select a configuration, using 7581 as an example
-cp configs/an7581.config .config
-#  If the target is AN7583, use the following line instead:
-cp configs/an7583.config .config
-
-
-
 #  Start building
 # -j$(nproc) means compiling in parallel with all CPU cores to speed things up
 make defconfig

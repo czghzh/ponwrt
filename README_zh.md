@@ -55,11 +55,6 @@ cd ponwrt
 ./scripts/feeds update -a
 ./scripts/feeds install -a
 
-#  选择配置 以目标7581为例
-cp configs/an7581.config .config
-#  若目标是 AN7583，改用下面这行：
-cp configs/an7583.config .config
-
 
 #  开始编译
 # -j$(nproc) 表示用所有 CPU 核心并行编译，加快速度
