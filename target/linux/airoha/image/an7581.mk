@@ -292,7 +292,8 @@ define Device/znxt_zn515xg-d
     kmod-mt7915e kmod-mt7916-firmware znxt-zn515-mt7916-eeprom \
     wpad-openssl \
     nand-utils ubi-utils $(AIROHA_USB_STORAGE_PACKAGES)
-  DEVICE_PACKAGES += fitblk
+  DEVICE_PACKAGES += fitblk \
+    openssh-sftp-server htop nano vim less
 endef
 TARGET_DEVICES += znxt_zn515xg-d
 
