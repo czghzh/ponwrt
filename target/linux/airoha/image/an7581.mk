@@ -293,7 +293,8 @@ define Device/znxt_zn515xg-d
     wpad-openssl \
     nand-utils ubi-utils $(AIROHA_USB_STORAGE_PACKAGES)
   DEVICE_PACKAGES += fitblk \
-    openssh-sftp-server htop nano vim less
+    openssh-sftp-server htop nano vim less \
+    kmod-sched kmod-tcp-bbr
 endef
 TARGET_DEVICES += znxt_zn515xg-d
 
