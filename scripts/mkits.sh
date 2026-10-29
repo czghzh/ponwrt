@@ -35,6 +35,7 @@ usage() {
 	printf "\n\t-l ==> legacy mode character (@ etc otherwise -)"
 	printf "\n\t-o ==> create output file 'its_file'"
 	printf "\n\t-O ==> create config with dt overlay 'name:dtb'"
+	printf "\n\t-E ==> add a self-contained config 'name:dtb' (own kernel + rootfs)"
 	printf "\n\t-s ==> set FDT load address to 'addr' (hex)"
 	printf "\n\t\t(can be specified more than once)\n"
 	exit 1
@@ -47,9 +48,10 @@ INITRDNUM=1
 HASH=sha1
 LOADABLES=
 DTOVERLAY=
+DTEXTRA=
 DTADDR=
 
-while getopts ":A:a:c:C:D:d:e:f:i:k:l:n:o:O:v:r:s:H:" OPTION
+while getopts ":A:a:c:C:D:d:e:E:f:i:k:l:n:o:O:v:r:s:H:" OPTION
 do
 	case $OPTION in
 		A ) ARCH=$OPTARG;;
@@ -59,6 +61,7 @@ do
 		D ) DEVICE=$OPTARG;;
 		d ) DTB=$OPTARG;;
 		e ) ENTRY_ADDR=$OPTARG;;
+		E ) DTEXTRA="$DTEXTRA ${OPTARG}";;
 		f ) COMPATIBLE=$OPTARG;;
 		i ) INITRD=$OPTARG;;
 		k ) KERNEL=$OPTARG;;
@@ -196,6 +199,57 @@ OVCONFIGS=""
 	"
 done
 
+# Add self-contained extra configurations.
+#
+# A -O overlay is a device-tree fragment: no kernel, no loadables.  The
+# bootloader has to stack it on another configuration with
+# `bootm <addr>#<conf>#<extra>`, and that only works when it parses the third
+# field.  U-Boot's fit_parse_conf/fit_parse_subimage do not (the third field
+# there is a subimage name), so such a configuration gets selected standalone,
+# finds no kernel and fails - which is exactly how the ZN515XG-D ended up in
+# Web recovery.
+#
+# -E emits a complete configuration instead: its own full dtb plus the same
+# kernel and rootfs as the default one.  Selected with the plain
+# `bootm <addr>#<name>` form that every FIT-capable bootloader understands.
+EXTRA_FDT_NODE=""
+EXTRA_CONFIGS=""
+[ "$DTEXTRA" ] && for extra in $DTEXTRA ; do
+	extra_blob=${extra##*:}
+	exname=${extra%%:*}
+	exnode="fdt-$exname"
+	exsize=$(wc -c "$extra_blob" | awk '{print $1}')
+	echo "$exname ($extra_blob) : $exsize" >&2
+	EXTRA_FDT_NODE="$EXTRA_FDT_NODE
+
+		$exnode {
+			description = \"${ARCH_UPPER} OpenWrt ${DEVICE} device tree $exname\";
+			${COMPATIBLE_PROP}
+			data = /incbin/(\"${extra_blob}\");
+			type = \"flat_dt\";
+			arch = \"${ARCH}\";
+			compression = \"none\";
+			hash${REFERENCE_CHAR}1 {
+				algo = \"crc32\";
+			};
+			hash${REFERENCE_CHAR}2 {
+				algo = \"${HASH}\";
+			};
+		};
+"
+	EXTRA_CONFIGS="$EXTRA_CONFIGS
+
+		$exname {
+			description = \"OpenWrt ${DEVICE} $exname\";
+			kernel = \"kernel${REFERENCE_CHAR}1\";
+			fdt = \"$exnode\";
+			${LOADABLES:+loadables = ${LOADABLES};}
+			${COMPATIBLE_PROP}
+			${INITRD_PROP}
+		};
+	"
+done
+
 # Create a default, fully populated DTS file
 DATA="/dts-v1/;
 
@@ -223,6 +277,7 @@ DATA="/dts-v1/;
 ${INITRD_NODE}
 ${FDT_NODE}
 ${FDTOVERLAY_NODE}
+${EXTRA_FDT_NODE}
 ${ROOTFS_NODE}
 	};
 
@@ -237,6 +292,7 @@ ${ROOTFS_NODE}
 			${INITRD_PROP}
 		};
 		${OVCONFIGS}
+		${EXTRA_CONFIGS}
 	};
 };"
 

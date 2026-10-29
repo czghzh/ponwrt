@@ -34,16 +34,6 @@
 			no-map;
 			reg = <0x0 0x84000000 0x0 0xa00000>;
 		};
-
-		qdma0_buf: qdma0-buf@87000000 {
-			no-map;
-			reg = <0x0 0x87000000 0x0 0x2000000>;
-		};
-
-		qdma1_buf: qdma1-buf@89000000 {
-			no-map;
-			reg = <0x0 0x89000000 0x0 0x1000000>;
-		};
 	};
 
 	psci {
@@ -974,9 +964,6 @@
 				     <GIC_SPI 60 IRQ_TYPE_LEVEL_HIGH>,
 				     <GIC_SPI 49 IRQ_TYPE_LEVEL_HIGH>,
 				     <GIC_SPI 64 IRQ_TYPE_LEVEL_HIGH>;
-
-			memory-region = <&qdma0_buf>, <&qdma1_buf>;
-			memory-region-names = "qdma0-buf", "qdma1-buf";
 
 			airoha,npu = <&npu>;
 

@@ -286,6 +286,7 @@ define Device/znxt_zn515xg-d
   $(call Device/znxt_zn50xg-d-common)
   DEVICE_MODEL := ZN515XG-D
   DEVICE_DTS := an7581-znxt-zn515xg-d
+  DEVICE_DTS_EXTRA := mem8192 mem16384
   DEVICE_PACKAGES := kmod-gpio-button-hotplug kmod-leds-gpio \
     kmod-usb3 kmod-usb-ledtrig-usbport kmod-phy-airoha-en8811h \
     kmod-airoha-en7572 kmod-airoha-xpon airoha-ponctl airoha-pond \

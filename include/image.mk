@@ -746,6 +746,12 @@ define Device/Build/kernel
 		$$(dtso) \
 	) \
   ))
+  $$(eval $$(foreach dts,$$(DEVICE_DTS_EXTRA), \
+	$$(call Device/Build/dtb,$$(notdir $$(dts)), \
+		$$(if $$(DEVICE_DTS_DIR),$$(DEVICE_DTS_DIR),$$(DTS_DIR)), \
+		$$(dts) \
+	) \
+  ))
 
   $(KDIR)/$$(KERNEL_NAME):: image_prepare
   $$(_TARGET): $$(if $$(KERNEL_INSTALL),$(BIN_DIR)/$$(KERNEL_IMAGE))

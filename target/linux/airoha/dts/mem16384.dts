@@ -1,0 +1,40 @@
+// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+/dts-v1/;
+
+/*
+ * ZN515XG-D with the 16384-descriptor QDMA forwarding-buffer profile.
+ *
+ * This reproduces the carve-out upstream an7581/an7583 ship with and that
+ * this tree carried before the two reserved-memory nodes were removed from
+ * an7581.dtsi to reclaim MemTotal:
+ *
+ *   QDMA0: 16384 * 2048 B = 32 MiB at 0x87000000
+ *   QDMA1: 16384 * 1024 B = 16 MiB at 0x89000000
+ *   Total 48 MiB, ending exactly at 0x8a000000, which is KERNEL_LOADADDR.
+ *
+ * Complete device tree, carried as the standalone FIT configuration
+ * "mem16384"; selected with `bootm <addr>#mem16384`.
+ */
+
+/memreserve/ 0x80000000 0x200000;
+
+#include "an7581-znxt-zn515xg-d.dtsi"
+
+/ {
+	reserved-memory {
+		qdma0_buf: qdma0-buf@87000000 {
+			no-map;
+			reg = <0x0 0x87000000 0x0 0x2000000>;
+		};
+
+		qdma1_buf: qdma1-buf@89000000 {
+			no-map;
+			reg = <0x0 0x89000000 0x0 0x1000000>;
+		};
+	};
+};
+
+&eth {
+	memory-region = <&qdma0_buf>, <&qdma1_buf>;
+	memory-region-names = "qdma0-buf", "qdma1-buf";
+};

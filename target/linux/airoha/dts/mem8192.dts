@@ -1,0 +1,37 @@
+// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+/dts-v1/;
+
+/*
+ * ZN515XG-D with the 8192-descriptor QDMA forwarding-buffer profile.
+ *
+ * This is a complete device tree, not an overlay: the FIT carries it as a
+ * standalone configuration ("mem8192") with the same kernel and rootfs as the
+ * default one, so U-Boot can select it with `bootm <addr>#mem8192`.
+ *
+ *   QDMA0: 8192 * 2048 B = 16 MiB at 0x87000000
+ *   QDMA1: 8192 * 1024 B =  8 MiB at 0x89000000
+ *   Total 24 MiB, i.e. 12 MiB more than the default profile.
+ */
+
+/memreserve/ 0x80000000 0x200000;
+
+#include "an7581-znxt-zn515xg-d.dtsi"
+
+/ {
+	reserved-memory {
+		qdma0_buf: qdma0-buf@87000000 {
+			no-map;
+			reg = <0x0 0x87000000 0x0 0x1000000>;
+		};
+
+		qdma1_buf: qdma1-buf@89000000 {
+			no-map;
+			reg = <0x0 0x89000000 0x0 0x800000>;
+		};
+	};
+};
+
+&eth {
+	memory-region = <&qdma0_buf>, <&qdma1_buf>;
+	memory-region-names = "qdma0-buf", "qdma1-buf";
+};
