@@ -1,0 +1,42 @@
+diff --git a/airoha-xpon/src/airoha-xpon-main.c b/airoha-xpon/src/airoha-xpon-main.c
+index 9623c27..a68ff69 100644
+--- a/airoha-xpon/src/airoha-xpon-main.c
++++ b/airoha-xpon/src/airoha-xpon-main.c
+@@ -3,6 +3,7 @@
+ #include <airoha-pon-frontend.h>
+ #include <linux/airoha-eth.h>
+ #include <linux/atomic.h>
++#include <linux/delay.h>
+ #include <linux/interrupt.h>
+ #include <linux/module.h>
+ #include <linux/mutex.h>
+@@ -511,14 +512,25 @@ static int airoha_xpon_create_device_links(struct airoha_xpon *xpon)
+ {
+ 	struct device *frontend_dev =
+ 		airoha_pon_frontend_device(xpon->frontend);
+-	int ret;
++	int ret, i;
+ 
+ 	if (!frontend_dev)
+ 		return -ENODEV;
+ 
+-	/* Instance links connect the PON netdev, controller, and optical frontend. */
+-	ret = sysfs_create_link(&xpon->pon_netdev->dev.kobj, &xpon->dev->kobj,
+-	                        "xpon");
++	/*
++	 * The PON netdev's sysfs node is published by register_netdevice().  On a
++	 * slow boot - notably the first one after flashing - the netdev can still
++	 * be in flight when this driver probes, and sysfs_create_link() then
++	 * returns -EFAULT.  Failing the whole probe over that leaves the modem
++	 * without omci0/oam0, so wait for the node instead of giving up.
++	 */
++	for (i = 0; i < 100; i++) {
++		ret = sysfs_create_link(&xpon->pon_netdev->dev.kobj,
++		                        &xpon->dev->kobj, "xpon");
++		if (ret != -EFAULT)
++			break;
++		msleep(10);
++	}
+ 	if (ret)
+ 		return ret;
+ 	ret = sysfs_create_link(&xpon->dev->kobj, &frontend_dev->kobj,

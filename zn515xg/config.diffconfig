@@ -1,0 +1,76 @@
+CONFIG_TARGET_airoha=y
+CONFIG_TARGET_airoha_an7581=y
+CONFIG_TARGET_airoha_an7581_DEVICE_znxt_zn515xg-d=y
+CONFIG_ALL_KMODS=y
+CONFIG_DWARVES=y
+CONFIG_KERNEL_DEBUG_INFO_BTF=y
+CONFIG_KERNEL_DEBUG_INFO_BTF_MODULES=y
+# CONFIG_KERNEL_DEBUG_INFO_REDUCED is not set
+CONFIG_KERNEL_MODULE_ALLOW_BTF_MISMATCH=y
+CONFIG_KERNEL_XDP_SOCKETS=y
+# CONFIG_KERNEL_ZRAM_BACKEND_FORCE_LZO is not set
+# CONFIG_KERNEL_ZRAM_BACKEND_LZO is not set
+CONFIG_KERNEL_ZRAM_BACKEND_ZSTD=y
+CONFIG_KERNEL_ZRAM_DEF_COMP_ZSTD=y
+CONFIG_LUCI_LANG_zh_Hans=y
+CONFIG_PACKAGE_autocore=y
+CONFIG_PACKAGE_cgi-io=y
+CONFIG_PACKAGE_conntrack=y
+CONFIG_PACKAGE_default-settings=y
+CONFIG_PACKAGE_default-settings-chn=y
+CONFIG_PACKAGE_ethtool-full=y
+CONFIG_PACKAGE_ip-bridge=y
+CONFIG_PACKAGE_iperf3=y
+CONFIG_PACKAGE_kmod-nft-bridge=y
+CONFIG_PACKAGE_kmod-xdp-sockets-diag=m
+CONFIG_PACKAGE_libatomic=y
+CONFIG_PACKAGE_libiperf3=y
+CONFIG_PACKAGE_libiwinfo=y
+CONFIG_PACKAGE_libiwinfo-data=y
+CONFIG_PACKAGE_liblucihttp=y
+CONFIG_PACKAGE_liblucihttp-ucode=y
+CONFIG_PACKAGE_libnetfilter-cthelper=y
+CONFIG_PACKAGE_libnetfilter-cttimeout=y
+CONFIG_PACKAGE_libnetfilter-queue=y
+CONFIG_PACKAGE_libpcap=y
+CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-app-firewall=y
+CONFIG_PACKAGE_luci-app-iptv=y
+CONFIG_PACKAGE_luci-app-package-manager=y
+CONFIG_PACKAGE_luci-app-pon=y
+CONFIG_PACKAGE_luci-app-zn515xg-hw=y
+CONFIG_PACKAGE_luci-app-zn515xg-mem=y
+CONFIG_PACKAGE_luci-base=y
+CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-firewall-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-iptv-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-pon-zh-cn=y
+CONFIG_PACKAGE_luci-lib-uqr=y
+CONFIG_PACKAGE_luci-light=y
+CONFIG_PACKAGE_luci-mod-admin-full=y
+CONFIG_PACKAGE_luci-mod-network=y
+CONFIG_PACKAGE_luci-mod-status=y
+CONFIG_PACKAGE_luci-mod-system=y
+CONFIG_PACKAGE_luci-proto-ipv6=y
+CONFIG_PACKAGE_luci-proto-ppp=y
+CONFIG_PACKAGE_luci-theme-bootstrap=y
+CONFIG_PACKAGE_rpcd=y
+CONFIG_PACKAGE_rpcd-mod-file=y
+CONFIG_PACKAGE_rpcd-mod-iwinfo=y
+CONFIG_PACKAGE_rpcd-mod-luci=y
+CONFIG_PACKAGE_rpcd-mod-rrdns=y
+CONFIG_PACKAGE_rpcd-mod-ucode=y
+CONFIG_PACKAGE_tcpdump=y
+CONFIG_PACKAGE_ucode-mod-html=y
+CONFIG_PACKAGE_ucode-mod-log=y
+CONFIG_PACKAGE_uhttpd=y
+CONFIG_PACKAGE_uhttpd-mod-ubus=y
+CONFIG_PACKAGE_zram-swap=m
+# CONFIG_TARGET_ROOTFS_INITRAMFS is not set
+# CONFIG_KERNEL_BPF_EVENTS is not set
+# CONFIG_KERNEL_BPF_STREAM_PARSER is not set
+# CONFIG_KERNEL_FTRACE is not set
+# CONFIG_KERNEL_KPROBES is not set
+# CONFIG_KERNEL_NETKIT is not set
+# CONFIG_KERNEL_PERF_EVENTS is not set
