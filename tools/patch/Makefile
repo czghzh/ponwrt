@@ -18,6 +18,11 @@ PKG_HASH:=308a4983ff324521b9b21310bfc2398ca861798f02307c79eb99bb0e0d2bf980
 HOST_BUILD_PARALLEL := 1
 HOST_CONFIGURE_CACHE:=1
 
+# patch 2.8 ships an old gnulib whose stdbool probe misfires on modern glibc /
+# gcc and turns config.h into an #error stub ("<stdbool.h> does not exist on
+# this platform").  Pre-seeding the header check keeps the real stdbool.h.
+HOST_CONFIGURE_VARS += ac_cv_header_stdbool_h=yes
+
 include $(INCLUDE_DIR)/host-build.mk
 
 HOSTCC := $(HOSTCC_NOCACHE)

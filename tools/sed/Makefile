@@ -31,6 +31,11 @@ HOST_CONFIGURE_ARGS += \
 	--disable-i18n \
 	--without-selinux
 
+# glibc >= 2.34 keeps socklen_t in <sys/socket.h> only, so sed 4.10's
+# AC_TYPE_SOCKLEN_T probe misses it and its own fallback then collides with the
+# already-included declaration ("conflicting types for 'getpeername'").
+HOST_CONFIGURE_VARS += ac_cv_type_socklen_t=yes
+
 define Host/Compile
 	+$(MAKE) $(HOST_JOBS) -C $(HOST_BUILD_DIR) SHELL="$(BASH)"
 endef
