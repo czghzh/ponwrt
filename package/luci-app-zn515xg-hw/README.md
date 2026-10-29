@@ -1,0 +1,239 @@
+# luci-app-zn515xg-hw
+
+给 **ZNXT ZN515XG-D**（Airoha AN7581，XG-PON 光猫）的 LuCI「状态 → 总览」页面重新排版：
+
+* **硬件监控** —— 替掉默认的「系统」块。左边 **2×2** 四张卡（**温度** (CPU + WiFi) /
+  **CPU 占用率** (含实时主频) / **Pon 端口速率** / **连接数** (含硬件卸载计数)），
+  右边一栏设备信息（主机名 / 型号 / 架构 / …），约 **3:2**；窄屏自动上下堆叠。
+  所有卡面（含设备信息栏）统一用 `--background-color-medium` 灰底 + 同款边框圆角，
+  视觉上是一套东西；只有设备信息栏的内边距略大（它是密排双列，不是带标题的卡片）。
+* **内存与储存** —— 把默认的「内存」「储存」两个块**合并成一块**，左右并排成卡片，
+  外观与上面的四张卡一致。
+
+![状态总览](docs/screenshot.png)
+
+<p align="center">
+  <img src="docs/block-memstore.png" alt="内存与储存块：内存 4 行 / 储存 3 行，两张卡底边拉齐" width="760"><br>
+  <img src="docs/rate-card.png" alt="Pon 端口速率卡片" width="280">
+</p>
+
+不想刷机、只想知道长什么样：直接用浏览器打开 [`docs/preview.html`](docs/preview.html)
+（纯静态页，由 `mock-render.js` 跑**真的模块**生成，无外部依赖）：
+
+```bash
+node mock-render.js     # 重新生成 docs/preview.html（改了 files/ 之后跑一次）
+```
+
+每次跑出来的结果都是**逐字节一样**的：脚本把时钟钉在读数采集的那一刻
+（`FROZEN_NOW`），所以「改了模块却忘了重跑生成器」是可以被检出来的 ——
+`verify-pkg.sh` 第 10 节就是拿重跑的结果和提交的那份比字节。
+
+| 项 | 值 |
+| --- | --- |
+| 包名 | `luci-app-zn515xg-hw` |
+| 版本 | `1.0.0-r11` |
+| 架构 | **`noarch`**（`PKGARCH:=all`，任何架构都能装） |
+| 依赖 | `luci-mod-status`、`rpcd`、`rpcd-mod-file` |
+| 许可 | GPL-2.0-only |
+| 包格式 | apk v3（OpenWrt 24.10+ / ImmortalWrt 快照） |
+
+---
+
+## 编译
+
+把本目录当成一个 OpenWrt 包放进源码树的 `package/` 下即可（仓库根就是包目录）：
+
+```bash
+cd <你的 OpenWrt / ImmortalWrt 源码树>
+git clone https://github.com/czghzh/luci-app-zn515xg-hw.git package/luci-app-zn515xg-hw
+
+# 选中它：LuCI -> 3. Applications -> luci-app-zn515xg-hw
+# 或者直接写配置（=m 只编出 apk，=y 会装进固件）
+echo 'CONFIG_PACKAGE_luci-app-zn515xg-hw=m' >> .config
+
+make package/luci-app-zn515xg-hw/compile V=s
+```
+
+产物在：
+
+```
+bin/packages/<arch>/base/luci-app-zn515xg-hw-1.0.0-r11.apk
+```
+
+> ⚠️ **改过 `files/` 里的文件之后，必须先 `clean` 再 `compile`。**
+> OpenWrt 的编译 stamp 只把 `Makefile` 当依赖，`files/*` 改了**不会**触发重编 ——
+> 直接 `compile` 会"成功"地打出一个装着旧文件的包。反正只有几秒：
+>
+> ```bash
+> make package/luci-app-zn515xg-hw/{clean,compile} V=s
+> ```
+>
+> ⚠️ 改了内容记得动版本号（`PKG_RELEASE` +1）。版本号不变而设备上装着同版本的旧包时，
+> `apk add` 可能判定"无变更"而不覆盖。
+
+---
+
+## 安装
+
+```bash
+scp luci-app-zn515xg-hw-1.0.0-r11.apk root@<设备>:/tmp/
+ssh root@<设备>
+```
+
+**装之前确认三件事：**
+
+1. 固件是 apk v3：`apk --version` → `apk-tools 3.x`
+2. LuCI 支持运行时目录扫描（否则装了也看不到卡片）：
+   `grep -c fs.list /www/luci-static/resources/view/status/index.js` → 必须 ≥ 1
+3. 设备确实是 ZN515XG-D：硬件监控卡片的数据源是这个型号专有的（`pon0` 统计、
+   `ppe/config`、`mt7915` hwmon）。装到别的机器上**装得上但卡片显示「不可用」**，
+   而默认块已经被停用 ⇒ 主页会少几块。
+
+### 方式 A：导入公钥（一次，之后同类包直接装）
+
+```bash
+cp public-key.pem /etc/apk/keys/ponwrt.pem      # 用新文件名，不要覆盖现有钥匙
+apk add --no-cache /tmp/luci-app-zn515xg-hw-1.0.0-r11.apk
+```
+
+> `public-key.pem` 就在本仓库根目录 —— 是**公**钥（文件首行是 `BEGIN PUBLIC KEY`），
+> 本来就该公开；只有签名用的私钥留在打包机的源码树里。仓库根目录另外两个非打包文件
+> （`mock-render.js`、`docs/`）对编译没有影响：OpenWrt 只看 `Makefile` 和 `files/`。
+
+### 方式 B：不导入公钥，本次跳过签名校验
+
+```bash
+apk add --allow-untrusted /tmp/luci-app-zn515xg-hw-1.0.0-r11.apk
+```
+
+* 只在本次生效，下次装同类包还得带参数
+* 跳过了签名验证 ⇒ **务必先核对 sha256**（方式 A 由签名本身保证完整性）
+* **不要加 `--no-scripts`** —— 停用默认块靠的就是包脚本
+
+> 报 `UNTRUSTED signature`（rc=99）就是这两种方式的分界：说明该设备没预置编这个包的钥匙。
+> apk 的信任锚是设备 `/etc/apk/keys/` 里的公钥，**不是**"自签名就能装"那套模型。
+> 想不动钥匙目录又保留验签，可以临时凑一个目录（`--keys-dir` 是**替换**而非追加）：
+>
+> ```bash
+> mkdir -p /tmp/k && cp /etc/apk/keys/*.pem /tmp/k/ && cp public-key.pem /tmp/k/
+> apk --keys-dir /tmp/k add /tmp/luci-app-zn515xg-hw-1.0.0-r11.apk
+> ```
+
+### 装完必做：重新登录一次 LuCI
+
+`rpcd` 只在**每次登录**时读取 ACL 清单，新装的 ACL 对已登录的会话不生效，
+不重新登录卡片会报权限错误。之后刷新浏览器即可（JS 是新增文件，不必清 `/tmp/luci-*`）。
+
+### 卸载 = 还原
+
+```bash
+apk del luci-app-zn515xg-hw && reboot
+```
+
+包脚本会把三个 `*.js.disabled` 改回 `*.js`，默认块原样回来。
+
+---
+
+## 它是怎么顶掉默认块的
+
+`view/status/include/` 下这三条路径**属于 `luci-mod-status` 包**，而 apk 不允许两个包
+拥有同一个文件，于是：
+
+| 被顶掉的 stock 块 | 本包提供的新文件 |
+| --- | --- |
+| `10_system.js`（System） | `15_hw.js`（硬件监控） |
+| `20_memory.js`（Memory） | `22_memstore.js`（内存与储存） |
+| `25_storage.js`（Storage） | `22_memstore.js`（内存与储存） |
+
+1. **换文件名绕开** —— 本包装的是 `15_hw.js` / `22_memstore.js`。
+   LuCI 总览页的 include 列表是**运行时扫目录**得来的
+   （`luci-mod-status/.../view/status/index.js`：`fs.list()` → 滤 `\.js$` → `sort()` →
+   `L.require()`），所以新文件名会被自动加载，而且 `22_` 正好落在原来 20/25 的位置，
+   不用去改任何属于别人的文件。
+2. **默认块靠包脚本停用** —— `post-install` / `post-upgrade` 把这三个
+   **改名**成 `*.js.disabled`（`.disabled` 不匹配 `\.js$` 过滤器，于是不再渲染，
+   而且离还原只差一次改名）；`post-deinstall` 改回来。**不是覆盖** ——
+   覆盖会被 `luci-mod-status` 的重装冲掉。
+
+> `title` 必须与默认块的 `System` / `Memory` / `Storage` 都不同（本包用「硬件监控」和
+> 「内存与储存」）：include 的 `id` 就是 title，而 LuCI 拿它当 localStorage 里
+> 「这个块被隐藏了没有」的 key。沿用旧 title 会**继承旧的隐藏状态**。
+
+---
+
+## 数据源
+
+### 硬件监控
+
+| 卡片 | 来源 |
+| --- | --- |
+| 温度（CPU + WiFi） | `/sys/class/thermal/thermal_zone0/temp`、`mt7915` hwmon |
+| CPU 占用率 + 实时主频 | `/proc/stat` 相邻两次采样差分、`getCPUInfo` 里的 `(900MHz, …)` |
+| Pon 端口速率 | `/sys/class/net/pon0/statistics/{rx,tx}_bytes` 两次采样差分，单位 **Mibit/s**（1024×1024 bit/s） |
+| 连接数（含卸载标记） | `/proc/net/nf_conntrack` 计数 + `[HW_OFFLOAD]` 标记 |
+| 硬件卸载是否生效 | `/sys/kernel/debug/ppe/config` 的 `npu_attached` |
+
+一次性读全部数据的 helper 是 `/usr/sbin/515xg-connstat`（连接数和光口字节共用一次 exec，
+不会把 `nf_conntrack` 扫两遍）。ACL 在 `files/luci-status-hardware.json`。
+
+速率卡里**上行在上、下行在下**，单位 Mibit/s，**不显示接口名**（页面上找不到 `pon0` 字样）。
+
+### 内存与储存
+
+口径与 stock 块**完全一致**，只是换了外壳并排显示：
+
+| 来源 | 用途 |
+| --- | --- |
+| `system.info` 的 `memory` / `swap` | 内存卡（Total Available / Used / Buffered / Cached / Swap free） |
+| `system.info` 的 `root` / `tmp` | 储存卡的前两行（Disk space / Temp space） |
+| `luci.getMountPoints` | 储存卡的其余挂载点，沿用 stock 的 `MountSkipList`（跳过 `/rom` `/tmp` `/dev` `/overlay` `/`） |
+
+这两个 rpcd 调用由 `luci-mod-status-index` 那个 ACL 组授权，本包**不需要**自己的 ACL 条目。
+
+### 在线客户端
+
+列序：**主机名 / IPv4 / MAC / 网速 / IPv6 / 接口**。前四列来自 `/usr/sbin/515xg-dhcphosts`
+（租约未过期 + FDB 能查到物理口 + ARP flags 非 0 三重确认），**网速**来自另一个脚本
+`/usr/sbin/515xg-clientsrate`，前端按 **MAC** 合并（MAC 就是这两张表的连接键）。
+
+| 客户端类型 | 速率来源 | 说明 |
+| --- | --- | --- |
+| 无线（`phy0-ap0` / `phy1-ap0`） | `iw dev <ap> station get <mac>` 的 rx/tx bytes | **实测不受 flowtable 卸载影响**，最可靠的一路 |
+| 有线（`lanN`） | `/sys/class/net/lanN/statistics/` | 内核没有 per-MAC 计数；**仅当该口独占一个 MAC 时**才用端口计数近似，一口多机输出 `-` |
+
+为什么不按 MAC 建 nft 计数器：设备上 flowtable 卸载是开着的（ruleset 里的 `ft` / `fb` 都带
+`flags offload`，FDB 条目带 `offload` 标记），卸载的流不再走 nft 的 forward 链，计数器基本读不到数。
+这台机器上 `tc` 和 `iptables` 也都没装。
+
+单位 **Mibit/s**，跟「硬件监控」的 Pon 端口速率一致。速率是两次采样的差值，所以脚本要在
+`/tmp/515xg-clientsrate.snap` 留一份快照 —— **刚打开卡片时网速列会先显示一排 `-`，
+下一次轮询就有数了**，这是预期的，不是故障。方向换算：`rx` = 客户端上行，`tx` = 客户端下行
+（都是 AP 视角）。
+
+样式（2026-10-10 定稿）：表头六格与**所有数据列**统一用主题主文字色
+（`--text-color-highest` —— 浅色主题下就是黑色，深色主题下是白色），表头和数据**整列左对齐**。
+唯一的彩色是网速的 `↑` `↓` 箭头（橙，`--orange-color-high`）和灰色的单位。
+
+两组速率的**顺序是 ↑上行在前、↓下行在后**。数值定宽 `7ch` —— 这个定宽是为了让
+两组箭头在**不同行之间**也各自落在同一竖线上（各行数值位数不同也不会跑偏，换序也不影响）；
+空闲（↑0 ↓0）的整格淡化到 55% 透明度。
+
+---
+
+## 已知现象（都不是故障）
+
+* **「Pon 端口速率」显示 0** —— 这张卡读的是 PON 光口字节数。设备没插光纤 / PON 没起来
+  （例如 WAN 走的是以太网口 + PPPoE）时速率就是 0。
+* **「硬件卸载」显示待命** —— `npu_attached` 是**懒挂载**（唯一赋值点在有流卸载时触发），
+  没有卸载流的时候它就是 0，有流量后自动变化，不是功能坏了。
+* 温度 / CPU 占用率 / 连接数三项只依赖 `/sys/class/thermal`、`/proc/stat`、
+  `/proc/net/nf_conntrack`，任何 OpenWrt 设备都有；**只有速率卡和卸载标记是这型号专有的**。
+* **`luci-mod-status` 被重装后默认块会复活** —— 四个 stock 文件回到 `include/` 里，
+  会和本包的块**并存**。点默认块自己的「隐藏」，或重装本包
+  （`apk fix --reinstall luci-app-zn515xg-hw`）即可。
+
+---
+
+## 许可
+
+GPL-2.0-only，见 [LICENSE](LICENSE)。

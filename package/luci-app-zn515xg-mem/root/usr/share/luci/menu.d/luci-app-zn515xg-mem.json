@@ -1,0 +1,13 @@
+{
+	"admin/status/zn515xg-mem": {
+		"title": "硬件加速内存",
+		"order": 90,
+		"action": {
+			"type": "view",
+			"path": "zn515xg/mem"
+		},
+		"depends": {
+			"acl": [ "luci-app-zn515xg-mem" ]
+		}
+	}
+}

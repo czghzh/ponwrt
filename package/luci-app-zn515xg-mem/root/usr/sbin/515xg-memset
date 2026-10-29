@@ -1,0 +1,212 @@
+#!/bin/sh
+#
+# ZNXT ZN515XG-D - QDMA hardware-forwarding pool profile switcher.
+#
+# The pool depth is `reserved_size / buf_size` inside
+# airoha_qdma_init_hfwd_queues(), so it is fixed at probe time by the device
+# tree the bootloader handed to the kernel.  The FIT this firmware ships
+# carries three device-tree configurations:
+#
+#   config-1              4096 slots   8 MiB + 4 MiB
+#   mem8192               8192 slots  16 MiB + 8 MiB
+#   mem16384             16384 slots  32 MiB + 16 MiB
+#
+# U-Boot picks one through the `bootconf` variable, which only takes effect
+# once boot_production has been rewritten to `bootm $loadaddr#$bootconf`.
+# Both live in the U-Boot environment stored in the ubootenv/ubootenv2 UBI
+# volumes, and that environment is empty on a factory unit - nothing has ever
+# called saveenv, so U-Boot has been running on its built-in default all along.
+#
+# Subcommands:
+#   status              print the current state as key=value lines
+#   set <4096|8192|16384>   write bootconf (takes effect on the next boot)
+#   init                seed the U-Boot environment (once per device)
+#
+# Called from view/zn515xg/mem.js through rpcd's file.exec, as root.
+
+ENVCONF=/etc/fw_env.config
+ENVSCRIPT=/usr/share/zn515xg/ubootenv.script
+
+# Two lines, redundant pair.  ENV_SIZE is 0x1f000 - one LEB, the Kconfig
+# default in env/Kconfig since AIROHA_UBI_ENV does not override it.
+ENVCONF_BODY='# /dev/ubi0_1 0x0 0x1f000 0x1f000
+/dev/ubi0_1 0x0 0x1f000 0x1f000
+/dev/ubi0_2 0x0 0x1f000 0x1f000'
+
+# Rewritten form of boot_production: same command, plus the configuration
+# selector.  Single quotes matter - $bootconf must reach U-Boot literally.
+BOOT_PRODUCTION='led $bootled_status on ; run ubi_read_production && bootm $loadaddr#$bootconf'
+
+fwget() {
+	fw_printenv -n "$1" 2>/dev/null
+}
+
+# True when the environment in flash is a real saved one.  A factory unit has
+# both volumes erased, so fw_printenv falls back to uboot-envtools' generic
+# default and warns about the CRC - that default knows nothing about this
+# board (no boot_ubi, no boot_production), so it must never be written back.
+env_saved() {
+	[ -f "$ENVCONF" ] || return 1
+	command -v fw_printenv >/dev/null 2>&1 || return 1
+	fw_printenv bootcmd 2>&1 | grep -qi 'bad crc' && return 1
+	return 0
+}
+
+slots_of() {
+	case "$1" in
+		config-1) echo 4096  ;;
+		mem8192)  echo 8192  ;;
+		mem16384) echo 16384 ;;
+		'')       echo 0     ;;
+		*)        echo -1    ;;
+	esac
+}
+
+do_status() {
+	if env_saved; then
+		echo "env_saved=yes"
+	else
+		echo "env_saved=no"
+	fi
+
+	bc="$(fwget bootconf)"
+	[ -n "$bc" ] || bc="config-1"
+
+	# boot_production only honours bootconf once it has been rewritten.
+	bp="$(fwget boot_production)"
+	case "$bp" in
+		*'$bootconf'*) echo "selector=yes" ;;
+		*)             echo "selector=no"  ;;
+	esac
+
+	echo "bootconf=$bc"
+	echo "bootconf_slots=$(slots_of "$bc")"
+	echo "boot_production=$bp"
+}
+
+do_set() {
+	want="$1"
+
+	case "$want" in
+		4096)  target="config-1" ;;
+		8192)  target="mem8192"  ;;
+		16384) target="mem16384" ;;
+		*)
+			echo "ok=no"
+			echo "msg=unsupported profile: $want"
+			exit 1
+			;;
+	esac
+
+	if ! env_saved; then
+		echo "ok=no"
+		echo "reason=env_missing"
+		echo "msg=U-Boot environment is not initialised yet"
+		exit 1
+	fi
+
+	bp="$(fwget boot_production)"
+	case "$bp" in
+		*'$bootconf'*) : ;;
+		*)
+			echo "ok=no"
+			echo "reason=selector_missing"
+			echo "msg=boot_production does not reference bootconf yet"
+			exit 1
+			;;
+	esac
+
+	if ! fw_setenv bootconf "$target" 2>/dev/null; then
+		echo "ok=no"
+		echo "reason=write_failed"
+		echo "msg=fw_setenv failed"
+		exit 1
+	fi
+
+	readback="$(fwget bootconf)"
+	if [ "$readback" != "$target" ]; then
+		echo "ok=no"
+		echo "reason=verify_failed"
+		echo "msg=read back '$readback', expected '$target'"
+		exit 1
+	fi
+
+	echo "ok=yes"
+	echo "bootconf=$readback"
+	echo "bootconf_slots=$(slots_of "$readback")"
+}
+
+do_init() {
+	if [ ! -f "$ENVSCRIPT" ]; then
+		echo "ok=no"
+		echo "msg=$ENVSCRIPT missing"
+		exit 1
+	fi
+
+	# Keep a copy of both volumes so a bad write can be rolled back by hand.
+	dd if=/dev/ubi0_1 of=/tmp/ubootenv.vol1.bak 2>/dev/null
+	dd if=/dev/ubi0_2 of=/tmp/ubootenv.vol2.bak 2>/dev/null
+
+	printf '%s\n' "$ENVCONF_BODY" > "$ENVCONF"
+
+	# Batch mode: one erase/write for all 48 variables.
+	if ! fw_setenv -s "$ENVSCRIPT" 2>/dev/null; then
+		echo "ok=no"
+		echo "reason=seed_failed"
+		echo "msg=fw_setenv -s failed"
+		exit 1
+	fi
+
+	if ! fw_setenv bootconf config-1 2>/dev/null; then
+		echo "ok=no"
+		echo "reason=bootconf_failed"
+		exit 1
+	fi
+
+	if ! fw_setenv boot_production "$BOOT_PRODUCTION" 2>/dev/null; then
+		echo "ok=no"
+		echo "reason=selector_failed"
+		exit 1
+	fi
+
+	# the entries that matter for booting must be present
+	missing=""
+	for v in bootcmd boot_ubi boot_production ubi_read_production ubi_mount; do
+		[ -n "$(fwget "$v")" ] || missing="$missing $v"
+	done
+
+	if [ -n "$missing" ]; then
+		echo "ok=no"
+		echo "reason=verify_failed"
+		echo "msg=missing:$missing"
+		exit 1
+	fi
+
+	if fw_printenv bootcmd 2>&1 | grep -qi 'bad crc'; then
+		echo "ok=no"
+		echo "reason=crc_failed"
+		exit 1
+	fi
+
+	echo "ok=yes"
+	echo "bootcmd=$(fwget bootcmd)"
+	echo "bootconf=$(fwget bootconf)"
+}
+
+case "$1" in
+	status)
+		do_status
+		;;
+	set)
+		do_set "$2"
+		;;
+	init)
+		do_init
+		;;
+	*)
+		echo "usage: 515xg-memset status|set <4096|8192|16384>|init"
+		exit 1
+		;;
+esac
+
+exit 0

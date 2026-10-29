@@ -1,0 +1,25 @@
+{
+	"luci-app-zn515xg-mem": {
+		"description": "Hardware acceleration memory page: read the boot-time carve-out report and switch the QDMA forwarding-pool profile",
+		"read": {
+			"file": {
+				"/usr/sbin/515xg-meminfo": [ "exec" ],
+				"/usr/sbin/515xg-memset": [ "exec" ],
+				"/usr/share/zn515xg/ubootenv.script": [ "read" ],
+				"/etc/fw_env.config": [ "read" ]
+			},
+			"ubus": {
+				"file": [ "read", "exec" ]
+			}
+		},
+		"write": {
+			"file": {
+				"/usr/sbin/515xg-memset": [ "exec" ],
+				"/etc/fw_env.config": [ "write" ]
+			},
+			"ubus": {
+				"file": [ "exec" ]
+			}
+		}
+	}
+}

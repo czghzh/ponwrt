@@ -1,0 +1,139 @@
+#
+# luci-app-zn515xg-hw - Status -> Overview rework for the ZN515XG-D
+#
+# Three blocks are shipped (listed in the order they render):
+#
+#   view/status/include/15_hw.js        the "硬件监控" block; it replaces the
+#                                       stock System block (10_system.js)
+#   view/status/include/22_memstore.js  the "内存与储存" block; it merges the
+#                                       stock Memory (20_memory.js) and
+#                                       Storage (25_storage.js) tables into one
+#                                       side by side row of cards
+#   view/status/include/23_dhcpclients.js  the "在线客户端" block; one row per
+#                                       online client with its IPv4 + IPv6
+#                                       address and its physical port
+#                                       (WIFI 5G / WIFI 2.4G / LAN 1 / LAN 2).
+#                                       The port is not in the lease, so a
+#                                       helper (usr/sbin/
+#                                       515xg-dhcphosts) joins the lease file
+#                                       with the bridge FDB and the ARP table.
+#                                       "23_" sorts right after 22_memstore.js,
+#                                       so the card sits directly below 内存与储存.
+#
+# The overview page discovers its includes by scanning that directory at
+# runtime (luci-mod-status .../view/status/index.js: fs.list() -> filter *.js
+# -> sort -> L.require()), so new file names are picked up without patching any
+# file owned by luci-mod-status.  That is also what keeps this package
+# installable with a plain `apk add`: the two packages never claim the same
+# path.
+#
+# The four stock blocks this package replaces (10_system.js, 20_memory.js,
+# 25_storage.js, 40_dhcp.js) are removed from that directory at install time.
+#
+# That removal runs in two places, and it has to:
+#
+#   files/99-zn515xg-status (uci-defaults)  what actually works for the image,
+#       because buildroot populates the rootfs with `apk add ... --no-scripts`,
+#       so postinst never runs there;
+#   postinst                                 covers `apk add` on a live system.
+#
+# Both are idempotent no-ops when the files are already gone.
+#
+include $(TOPDIR)/rules.mk
+
+PKG_NAME:=luci-app-zn515xg-hw
+PKG_VERSION:=1.0.0
+PKG_RELEASE:=12
+
+PKG_LICENSE:=GPL-2.0-only
+PKG_MAINTAINER:=czghzh <czghzh@users.noreply.github.com>
+
+include $(INCLUDE_DIR)/package.mk
+
+define Package/luci-app-zn515xg-hw
+  SECTION:=luci
+  CATEGORY:=LuCI
+  SUBMENU:=3. Applications
+  TITLE:=ZN515XG-D Status -> Overview rework (hardware + clients + memory & storage)
+  DEPENDS:=+luci-mod-status +rpcd +rpcd-mod-file +ip-bridge
+  PKGARCH:=all
+endef
+
+define Package/luci-app-zn515xg-hw/description
+  Reworks LuCI's Status -> Overview page for the ZN515XG-D:
+  a "硬件监控" block with board temperatures (CPU + WiFi), CPU usage with the
+  live clock, the uplink up/down throughput and the TCP/UDP connection
+  counters including their hardware offload share; an "在线客户端"
+  block listing every online client with its IPv4 + IPv6 address and its
+  physical port; and a
+  "内存与储存" block that puts the stock Memory and Storage tables side by
+  side as cards.
+  The four stock blocks they replace (System, Memory, Storage and DHCP Leases)
+  are taken out of the way by the package scripts and restored when the package
+  is removed.
+endef
+
+# This package ships plain scripts and JS only - there is no source to build.
+# Without an explicit (empty) Build/Compile the default rule runs
+# `make -C $(PKG_BUILD_DIR)` and dies with
+# "No targets specified and no makefile found".
+define Build/Compile
+endef
+
+define Package/luci-app-zn515xg-hw/install
+	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/status/include
+	$(INSTALL_DATA) ./files/15_hw.js $(1)/www/luci-static/resources/view/status/include/15_hw.js
+	$(INSTALL_DATA) ./files/22_memstore.js $(1)/www/luci-static/resources/view/status/include/22_memstore.js
+	$(INSTALL_DATA) ./files/23_dhcpclients.js $(1)/www/luci-static/resources/view/status/include/23_dhcpclients.js
+	$(INSTALL_DIR) $(1)/www/luci-static/resources
+	$(INSTALL_DATA) ./files/hardware_status.js $(1)/www/luci-static/resources/hardware_status.js
+	$(INSTALL_DIR) $(1)/usr/sbin
+	$(INSTALL_BIN) ./files/515xg-connstat $(1)/usr/sbin/515xg-connstat
+	$(INSTALL_BIN) ./files/515xg-dhcphosts $(1)/usr/sbin/515xg-dhcphosts
+	$(INSTALL_BIN) ./files/515xg-clientsrate $(1)/usr/sbin/515xg-clientsrate
+	$(INSTALL_DIR) $(1)/usr/share/rpcd/acl.d
+	$(INSTALL_DATA) ./files/luci-status-hardware.json $(1)/usr/share/rpcd/acl.d/luci-status-hardware.json
+	$(INSTALL_DIR) $(1)/etc/uci-defaults
+	$(INSTALL_BIN) ./files/99-zn515xg-status $(1)/etc/uci-defaults/99-zn515xg-status
+endef
+
+# Move the stock blocks this package replaces out of the directory scan.
+# "*.js.disabled" does not match the include loader's /\.js$/ filter, so they
+# stop being rendered while staying one rename away from being restored.
+#
+#   10_system.js   -> replaced by 15_hw.js        ("硬件监控")
+#   20_memory.js   -> replaced by 22_memstore.js  ("内存与储存")
+#   25_storage.js  -> replaced by 22_memstore.js  ("内存与储存")
+#   40_dhcp.js     -> replaced by 23_dhcpclients.js ("在线客户端"); the stock
+#                     block only lists DHCPv4 leases, ours adds the IPv6 address
+#                     and the physical port, so keeping both would just show the
+#                     same clients twice.
+define Package/luci-app-zn515xg-hw/postinst
+#!/bin/sh
+[ -n "$${IPKG_INSTROOT}" ] && exit 0
+
+INC=/www/luci-static/resources/view/status/include
+for f in 10_system 20_memory 25_storage 40_dhcp; do
+	if [ -f "$$INC/$$f.js" ]; then
+		cp -p "$$INC/$$f.js" "$$INC/$$f.js.disabled" && rm -f "$$INC/$$f.js"
+	fi
+done
+exit 0
+endef
+
+# Put them back on removal.  The .disabled copies are not owned by any package,
+# so they survive this package's own file removal.
+define Package/luci-app-zn515xg-hw/postrm
+#!/bin/sh
+[ -n "$${IPKG_INSTROOT}" ] && exit 0
+
+INC=/www/luci-static/resources/view/status/include
+for f in 10_system 20_memory 25_storage 40_dhcp; do
+	if [ -f "$$INC/$$f.js.disabled" ]; then
+		cp -p "$$INC/$$f.js.disabled" "$$INC/$$f.js" && rm -f "$$INC/$$f.js.disabled"
+	fi
+done
+exit 0
+endef
+
+$(eval $(call BuildPackage,luci-app-zn515xg-hw))
