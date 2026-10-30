@@ -83,6 +83,53 @@ CONFIG_XDP_SOCKETS_DIAG=m
 这个符号**（6.18 树里 `net/sched/sch_bpf.c` 不存在），写了会让 `make olddefconfig`
 报 `(NEW)` 然后 syncconfig 失败。
 
+### 2.1 BPF LSM：DAED 真正卡住的地方
+
+只开 BTF 不够。DAED 的 `local_tcp_sockops`（`BPF_PROG_TYPE_SOCK_OPS`）调用
+`bpf_get_current_task()`，而这个 helper 在 `kernel/bpf/verifier.c` 的
+`check_sock_ops_func_proto()` 里**只在 `#ifdef CONFIG_BPF_LSM` 分支才放行**：
+
+```
+load program: invalid argument: program of this type cannot use helper bpf_get_current_task#35
+```
+
+外显症状很容易误判：`/etc/rc.d/S99daed` 已启用，但 procd 显示 `running:false`、
+`exit_code:1`、incarnation 一路涨（crash loop）。此时内存、架构、BTF 都正常，
+只有这一条。
+
+**改这个开关要同时动三层，少一层就白改**：
+
+| 层 | 位置 | 说明 |
+|---|---|---|
+| a | `target/linux/generic/config-6.18`（+ subtarget `config-6.18`） | 设 `CONFIG_SECURITY=y`、`CONFIG_BPF_LSM=y`、`CONFIG_SECURITYFS=y`，`CONFIG_LSM` 末尾加 `bpf` |
+| b | **顶层 `.config` 的 `CONFIG_KERNEL_*`** | 最易漏，且是最终覆盖者 |
+| c | `build_dir/target-*/linux-*/…/.config` | 只信这里，前两层都对了它才一定对 |
+
+机制：`kernel-defaults.mk` 的 `Kernel/Configure/Default` 会把顶层 `.config` 里**所有**
+`CONFIG_KERNEL_*` 转成 `CONFIG_*`**追加到 `.config.target` 末尾**。所以顶层
+`# CONFIG_KERNEL_SECURITY is not set` 会把 target config 里的 `CONFIG_SECURITY=y` 盖掉。
+
+诊断手法：`grep -c "^CONFIG_X=" .config.target` 得到 1 但最终不生效，
+说明同名符号在 `.config.target` 里出现了两次（`scripts/kconfig.pl` 的 `m+` 模式后者胜）。
+
+打开 `CONFIG_SECURITY=y` 还会点亮一整屏新菜单，非交互 `syncconfig` 遇到 `(NEW)` 符号
+直接 abort（本次是 `SECURITY_IPE`）。必须先把新增的 `SECURITY_*` / `INTEGRITY` / `IMA` /
+`EVM` / `DEFAULT_SECURITY_*` 显式 pin 成 `# ... is not set`，再 `make defconfig`。
+
+配套还要在顶层打开（DAED 的 kprobe/uprobe/tracepoint 与 perf event array 依赖）：
+
+```
+CONFIG_KERNEL_AUDIT=y
+CONFIG_KERNEL_SECURITY_NETWORK=y
+CONFIG_KERNEL_BPF_EVENTS=y
+CONFIG_KERNEL_KPROBES=y
+CONFIG_KERNEL_KPROBE_EVENTS=y
+CONFIG_KERNEL_FTRACE=y
+CONFIG_KERNEL_PERF_EVENTS=y
+```
+
+以上顶层项都记在 `config.diffconfig` 里；`target/linux/*/config-6.18` 的改动直接在树里。
+
 ---
 
 ## 3. 两个 LuCI 包
@@ -169,11 +216,58 @@ ls -l build_dir/target-*/linux-*/Image          # 应约 16.8 MiB
 再用脚本把它们收进 `files/www/kmods/`（`files/` 被 gitignore，不进仓库）：
 
 ```sh
-./zn515xg/build-kmods-repo.sh      # 收集 kmod-*.apk → 生成签名索引 → 验签
+./zn515xg/build-kmods-repo.sh      # kmod-filter 裁剪 → 收集 → 生成签名索引 → 验签
 ```
 
-fit 分区只有 64.3 MiB，全量 1204 个 kmod 是 57.4 MiB，装不下，脚本默认剔掉本板
-物理上不可能用到的 15 个（mt7990/mt7992/mt7996/mt7925/mt7922 的 Wi-Fi 6E/7 固件、
-iwlwifi、mlx5、oaf），剩 1189 个约 40.5 MiB。**不要写成 `kmod-mt79*`**，会误伤板载 mt7915。
+### 裁剪：1204 → 614
+
+`kmod-filter.py` 按**板载硬件画像**挑选，而不是简单拉黑几个型号：
+
+| 依据 | 来源 |
+|---|---|
+| SoC | airoha / en7581 |
+| Wi-Fi | MT7915E `14c3:790a` + MT7916 `14c3:7906`，跑 `mt7915e` + `mt76` |
+| USB | xhci-mtk，已用 `usb-storage` + `uas` |
+| PON | `airoha-pon-*`、`airoha-en7572` |
+| 固件内置 | `kmods-builtin-ko.txt`，从设备 `/rom/lib/modules/<ver>/` 抓的 116 个 `.ko` |
+
+选法是「白名单（平台 + 网络/存储/加密/基础子系统）+ 硬删除（其它平台无线固件、
+其它厂商网卡、ATA 控制器、蓝牙/DVB/声卡）+ **依赖闭包**」，跑完必须 0 断链。
+结果 614 个、14.3 MiB，rootfs 从 11.4 MB 涨到 25.2 MB，固件 33 MB。
+
+早先的做法是只剔 15 个（mt7990/92/96、mt7925/92、iwlwifi、mlx5、oaf），留 1189 个、
+40.5 MiB，也能刷（fit 分区 64.3 MiB），但塞了一堆本板永远用不到的驱动。
+**注意别写成 `kmod-mt79*`**，会误伤板载的 mt7915。
+
+### 签名：只签索引，不要签包
+
+`packages.adb` 用根目录的 `private-key.pem` 签，对应设备固件自带的
+`/etc/apk/keys/public-key.pem`，所以刷完机 `apk update` 直接就是可信源。
+
+两条必须遵守的规则（都踩过）：
+
+1. **不要对包执行 `apk adbsign`**。它会重写 v3 包，实测把 15102 字节的
+   `kmod-veth` 写成 1040 字节，data 块直接丢了，装上去报 `ADB block error`。
+2. `apk mkndx` 必须同时给 `--allow-untrusted`（让未签名包能进索引）和
+   `--keys-dir`。**少给 `--keys-dir` 签名会静默丢失**：命令退出码仍是 0、
+   索引正常生成，但里面没有 `# sig` 块。校验办法：
+   `apk adbdump packages.adb | grep '^# sig'`。
+
+### 三个连不通的源
+
+`pon_drivers` / `pon_userspace` / `video` 三个 feed 在设备上 wget 一律 error 8
+（`packages.adb: unexpected end of file`），所以 `.config` 里把它们由 `y` 改成 `m`：
+
+```sh
+CONFIG_FEED_video=m
+CONFIG_FEED_pon_drivers=m
+CONFIG_FEED_pon_userspace=m
+```
+
+`include/feeds.mk` 的 `$(if $(filter m,$(CONFIG_FEED_$(feed))),# )` 会在 `distfeeds.list`
+里给这三行加 `# ` 注释掉。
+
+**只能改 `y`→`m`，绝不能从 `feeds.conf` 里删掉这几行**：`pon_drivers` 提供
+airoha 的驱动包，删了 feed 之后 `make world` 找不到包，固件会缺驱动直接变砖。
 
 设备上装包前先跑一次 `apk update`（`/var` 是 tmpfs，重启后索引缓存为空）。
